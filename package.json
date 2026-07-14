@@ -1,0 +1,39 @@
+{
+  "name": "tiptap-render-html",
+  "version": "1.0.0",
+  "description": "Render Tiptap JSON content to HTML.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/floriansacc/tiptap-render-html.git"
+  },
+  "bugs": {
+    "url": "https://github.com/floriansacc/tiptap-render-html/issues"
+  },
+  "homepage": "https://github.com/floriansacc/tiptap-render-html#readme",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "tiptap",
+    "html",
+    "renderer"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

@@ -12,6 +12,52 @@ function getAlignStyle(node: any): string {
   return align && align !== "left" ? ` style="text-align: ${align}"` : "";
 }
 
+// keeps a css value inside its declaration (no `;` to add other properties, no quote to leave the attribute)
+function sanitizeCssValue(value: string): string {
+  return value.replace(/[;"'<>{}\\]/g, "").trim();
+}
+
+/**
+ * Renders a text node with its marks, nested in a fixed order (outer → inner):
+ * link > textStyle span > bold > italic > underline > strike > code.
+ *
+ * The page shows the html inside `prose` (tailwind typography), which gives `strong`, `code` and `a`
+ * their own color: an inherited color from an outer span is overridden there. So the textStyle color
+ * is repeated on those elements, and em/u/s (decoration color included) inherit it from them.
+ */
+function renderText(node: any): string {
+  const raw: string = node.text ?? "";
+  // an empty text would still produce empty tags, and keep its paragraph from getting a <br>
+  if (!raw) return "";
+
+  const marks: any[] = node.marks ?? [];
+  const hasMark = (type: string) => marks.some((m) => m.type === type);
+
+  const textStyle = marks.find((m) => m.type === "textStyle")?.attrs ?? {};
+  const color = textStyle.color
+    ? sanitizeCssValue(String(textStyle.color))
+    : "";
+  const colorStyle = color ? ` style="color: ${escapeHtml(color)}"` : "";
+
+  let html = escapeHtml(raw);
+  if (hasMark("code")) html = `<code${colorStyle}>${html}</code>`;
+  if (hasMark("strike")) html = `<s>${html}</s>`;
+  if (hasMark("underline")) html = `<u>${html}</u>`;
+  if (hasMark("italic")) html = `<em>${html}</em>`;
+  if (hasMark("bold")) html = `<strong${colorStyle}>${html}</strong>`;
+
+  const linkMark = marks.find((m) => m.type === "link");
+  if (linkMark) {
+    const href = escapeHtml(linkMark.attrs?.href ?? "#");
+    const target = escapeHtml(linkMark.attrs?.target ?? "_blank");
+    html = `<a href="${href}" target="${target}" rel="noopener noreferrer"${colorStyle}>${html}</a>`;
+  } else if (color) {
+    html = `<span${colorStyle}>${html}</span>`;
+  }
+
+  return html;
+}
+
 function renderNode(node: any): string {
   switch (node.type) {
     case "doc":
@@ -27,38 +73,8 @@ function renderNode(node: any): string {
       return `<h${node.attrs.level}${getAlignStyle(node)}>${inner || "<br>"}</h${node.attrs.level}>`;
     }
 
-    case "text": {
-      let text = escapeHtml(node.text ?? "");
-      if (node.marks) {
-        const marks = node.marks;
-        const colorMark = marks.find(
-          (m: any) => m.type === "textStyle" && m.attrs?.color,
-        );
-        const linkMark = marks.find((m: any) => m.type === "link");
-
-        for (const mark of marks) {
-          if (mark.type === "bold") text = `<strong>${text}</strong>`;
-          if (mark.type === "italic") text = `<em>${text}</em>`;
-          if (mark.type === "underline") text = `<u>${text}</u>`;
-          if (mark.type === "strike") text = `<s>${text}</s>`;
-          if (mark.type === "code") text = `<code>${text}</code>`;
-          // textStyle below with link
-        }
-
-        // combine color + link into one element
-        if (linkMark) {
-          const href = escapeHtml(linkMark.attrs.href ?? "#");
-          const target = linkMark.attrs.target ?? "_blank";
-          const colorStyle = colorMark
-            ? ` style="color: ${escapeHtml(colorMark.attrs.color)}"`
-            : "";
-          text = `<a href="${href}" target="${target}" rel="noopener noreferrer"${colorStyle}>${text}</a>`;
-        } else if (colorMark) {
-          text = `<span style="color: ${escapeHtml(colorMark.attrs.color)}">${text}</span>`;
-        }
-      }
-      return text;
-    }
+    case "text":
+      return renderText(node);
 
     case "youtube": {
       const { src, width, height, start } = node.attrs;
@@ -80,6 +96,19 @@ function renderNode(node: any): string {
             allowfullscreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           ></iframe>
+        </div>`;
+    }
+
+    // plain tiptap image, created when pasting content with <img> (ex: external page, badges)
+    case "image": {
+      if (!node.attrs?.src) return "";
+
+      const { src, alt, title, width, height } = node.attrs;
+      const sizeAttrs = `${width ? ` width="${escapeHtml(String(width))}"` : ""}${height ? ` height="${escapeHtml(String(height))}"` : ""}`;
+
+      return `
+        <div${getAlignStyle(node)}>
+          <img src="${escapeHtml(src)}" alt="${escapeHtml(alt ?? "")}"${title ? ` title="${escapeHtml(title)}"` : ""}${sizeAttrs} style="display: inline-block; max-width: 100%; height: auto;" />
         </div>`;
     }
 
@@ -123,4 +152,40 @@ function renderChildren(node: any): string {
 
 export function renderBlogContent(json: string): string {
   return renderNode(JSON.parse(json));
+}
+
+export function extractImageUrls(node: any): string[] {
+  const urls: string[] = [];
+  if ((node.type === "image" || node.type === "imageResize") && node.attrs?.src)
+    urls.push(node.attrs.src);
+  if (node.content) {
+    for (const child of node.content) urls.push(...extractImageUrls(child));
+  }
+  return urls;
+}
+
+// nodes that are empty when they have no children: containers, line break, and the pending upload placeholder
+const NON_CONTENT_NODE_TYPES = [
+  "doc",
+  "paragraph",
+  "heading",
+  "blockquote",
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "codeBlock",
+  "hardBreak",
+  "imageUpload",
+];
+
+/**
+ * True if the editor JSON has visible content (non blank text, image, youtube, horizontal rule...).
+ * `attrs` can't be used as a signal: TextAlign adds `{ textAlign: null }` to every paragraph, even empty ones.
+ */
+export function hasVisibleContent(node: any): boolean {
+  if (!node) return false;
+  if (node.type === "text") return (node.text ?? "").trim().length > 0;
+  if (node.content?.length) return node.content.some(hasVisibleContent);
+
+  return !NON_CONTENT_NODE_TYPES.includes(node.type);
 }

@@ -32,10 +32,10 @@ const html = renderBlogContent(
 
 Parses a Tiptap JSON string and renders it to HTML.
 
-### `renderNode(node)`
+### `extractImageUrls(node)`
 
-Renders a parsed Tiptap node object to HTML.
+Returns the `src` of every `image` and `imageResize` node in a parsed Tiptap node tree.
 
-### `renderChildren(node)`
+### `hasVisibleContent(node)`
 
-Renders a node's child content to HTML.
+Returns `true` if a parsed Tiptap node tree has visible content (non-blank text, image, YouTube embed, horizontal rule...). Empty paragraphs, headings, lists, hard breaks and pending `imageUpload` placeholders don't count.

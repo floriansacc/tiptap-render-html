@@ -1,6 +1,6 @@
 {
   "name": "tiptap-render-html",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Render Tiptap JSON content to HTML.",
   "type": "module",
   "main": "./dist/index.js",
